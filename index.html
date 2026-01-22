@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open House Portal - TLC Realty</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        
+        const API_URL = 'https://script.google.com/a/macros/tlcrealty.homes/s/AKfycbwjzLdhrjWCAY-V72Uk5FHUMn_bK18QSkO76bWoLACMZp8MGdcL9ETZM61M4e03khR7YA/exec';
+
+        function OpenHouseScheduler() {
+          const [view, setView] = useState('agent');
+          const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+          const [adminPassword, setAdminPassword] = useState('');
+          const ADMIN_PASSWORD = 'TLC2172$$';
+          
+          const [properties, setProperties] = useState([]);
+          const [bookings, setBookings] = useState([]);
+          const [loading, setLoading] = useState(true);
+          const [newProperty, setNewProperty] = useState({ address: '', weekOf: '' });
+          const [showBookingForm, setShowBookingForm] = useState(false);
+          const [selectedProperty, setSelectedProperty] = useState(null);
+          const [newBooking, setNewBooking] = useState({
+            agentName: '',
+            phone: '',
+            date: '',
+            startTime: '',
+            endTime: ''
+          });
+
+          useEffect(() => {
+            loadData();
+          }, []);
+
+          const loadData = async () => {
+            setLoading(true);
+            try {
+              const [propsRes, bookingsRes] = await Promise.all([
+                fetch(`${API_URL}?action=getProperties`),
+                fetch(`${API_URL}?action=getBookings`)
+              ]);
+              
+              const propsData = await propsRes.json();
+              const bookingsData = await bookingsRes.json();
+              
+              setProperties(propsData.properties || []);
+              setBookings(bookingsData.bookings || []);
+            } catch (error) {
+              console.error('Error loading data:', error);
+              alert('Error loading data. Please refresh the page.');
+            }
+            setLoading(false);
+          };
+
+          const getWeekRange = (weekOfDate) => {
+            const date = new Date(weekOfDate);
+            const day = date.getDay();
+            const diff = date.getDate() - day;
+            const sunday = new Date(date.setDate(diff));
+            const saturday = new Date(sunday);
+            saturday.setDate(saturday.getDate() + 6);
+            return { start: sunday, end: saturday };
+          };
+
+          const getActiveProperties = () => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            return properties.filter(prop => {
+              const weekRange = getWeekRange(prop.weekOf);
+              return weekRange.end >= today;
+            }).sort((a, b) => new Date(a.weekOf) - new Date(b.weekOf));
+          };
+
+          const isPropertyBooked = (propertyId) => {
+            return bookings.some(b => b.propertyId == propertyId);
+          };
+
+          const getBookingForProperty = (propertyId) => {
+            return bookings.find(b => b.propertyId == propertyId);
+          };
+
+          const formatWeekRange = (weekOfDate) => {
+            const range = getWeekRange(weekOfDate);
+            const start = range.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            const end = range.end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            return `${start} - ${end}`;
+          };
+
+          const handleAdminLogin = () => {
+            if (adminPassword === ADMIN_PASSWORD) {
+              setIsAdminAuthenticated(true);
+              setAdminPassword('');
+            } else {
+              alert('Incorrect password');
+              setAdminPassword('');
+            }
+          };
+
+          const handleAdminLogout = () => {
+            setIsAdminAuthenticated(false);
+            setView('agent');
+          };
+
+          const handleAddProperty = async () => {
+            if (!newProperty.address || !newProperty.weekOf) {
+              alert('Please fill in all fields');
+              return;
+            }
+
+            const newId = Date.now();
+            const propertyData = {
+              id: newId,
+              address: newProperty.address,
+              weekOf: newProperty.weekOf
+            };
+
+            try {
+              const response = await fetch(API_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'addProperty', ...propertyData })
+              });
+              
+              await response.json();
+              await loadData();
+              setNewProperty({ address: '', weekOf: '' });
+              alert('Property added successfully!');
+            } catch (error) {
+              console.error('Error adding property:', error);
+              alert('Error adding property. Please try again.');
+            }
+          };
+
+          const handleDeleteProperty = async (id) => {
+            if (!confirm('Delete this property? All bookings will be removed.')) return;
+
+            try {
+              await fetch(API_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'deleteProperty', id: id })
+              });
+              
+              await loadData();
+            } catch (error) {
+              console.error('Error deleting property:', error);
+              alert('Error deleting property. Please try again.');
+            }
+          };
+
+          const handleStartBooking = (property) => {
+            setSelectedProperty(property);
+            setShowBookingForm(true);
+          };
+
+          const handleSubmitBooking = async () => {
+            if (!newBooking.agentName || !newBooking.phone || !newBooking.date || 
+                !newBooking.startTime || !newBooking.endTime) {
+              alert('Please fill in all fields');
+              return;
+            }
+
+            const bookingDate = new Date(newBooking.date);
+            const weekRange = getWeekRange(selectedProperty.weekOf);
+            
+            if (bookingDate < weekRange.start || bookingDate > weekRange.end) {
+              alert(`Please select a date within the week of ${formatWeekRange(selectedProperty.weekOf)}`);
+              return;
+            }
+
+            const bookingData = {
+              id: Date.now(),
+              propertyId: selectedProperty.id,
+              propertyAddress: selectedProperty.address,
+              weekOf: selectedProperty.weekOf,
+              agentName: newBooking.agentName,
+              phone: newBooking.phone,
+              date: newBooking.date,
+              startTime: newBooking.startTime,
+              endTime: newBooking.endTime
+            };
+
+            try {
+              await fetch(API_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'addBooking', ...bookingData })
+              });
+              
+              await loadData();
+              setNewBooking({ agentName: '', phone: '', date: '', startTime: '', endTime: '' });
+              setShowBookingForm(false);
+              setSelectedProperty(null);
+              alert('Open house booked successfully! This property is now unavailable for this week.');
+            } catch (error) {
+              console.error('Error booking:', error);
+              alert('Error booking. Please try again.');
+            }
+          };
+
+          const handleCancelBooking = async (bookingId) => {
+            if (!confirm('Cancel this booking? This will make the property available again.')) return;
+
+            try {
+              await fetch(API_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'deleteBooking', id: bookingId })
+              });
+              
+              await loadData();
+            } catch (error) {
+              console.error('Error canceling booking:', error);
+              alert('Error canceling booking. Please try again.');
+            }
+          };
+
+          const exportSchedule = () => {
+            let csv = 'Property Address,Week Of,Agent Name,Phone,Date,Day of Week,Time\n';
+            bookings
+              .sort((a, b) => new Date(a.date) - new Date(b.date))
+              .forEach(b => {
+                const dayOfWeek = new Date(b.date).toLocaleDateString('en-US', { weekday: 'long' });
+                csv += `"${b.propertyAddress}","${formatWeekRange(b.weekOf)}","${b.agentName}","${b.phone}","${b.date}","${dayOfWeek}","${b.startTime} - ${b.endTime}"\n`;
+              });
+            
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'open-house-schedule.csv';
+            a.click();
+          };
+
+          const activeProperties = getActiveProperties();
+
+          if (loading) {
+            return (
+              <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 p-6 flex items-center justify-center">
+                <div className="text-center">
+                  <div className="animate-spin mx-auto mb-4 text-blue-900 text-5xl">⟳</div>
+                  <p className="text-gray-600 font-medium">Loading Open House Portal...</p>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 p-6">
+              <div className="max-w-6xl mx-auto">
+                <div className="bg-white rounded-xl shadow-xl p-8 mb-6 border-t-4 border-blue-900">
+                  <div className="flex justify-between items-center mb-6">
+                    <div className="flex items-center gap-4">
+                      <img 
+                        src="https://www.dropbox.com/scl/fi/smxwkgt9hrs7v5jg3qceu/TLC-Realty-Group-Logos-12026-lockup.png?rlkey=qxy1lsk5lvfeo5ohb5rqgvrrz&st=e5gqx5kp&raw=1" 
+                        alt="TLC Realty Logo" 
+                        className="h-16 object-contain"
+                      />
+                      <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-900 to-blue-700 bg-clip-text text-transparent">
+                        Open House Portal
+                      </h1>
+                    </div>
+                    <button
+                      onClick={exportSchedule}
+                      className="flex items-center gap-2 bg-emerald-600 text-white px-5 py-2.5 rounded-lg hover:bg-emerald-700 transition shadow-md hover:shadow-lg font-medium"
+                    >
+                      📥 Export Schedule
+                    </button>
+                  </div>
+                  
+                  <div className="flex gap-4">
+                    <button
+                      onClick={() => setView('agent')}
+                      className={`px-8 py-3 rounded-lg font-semibold transition shadow-md ${
+                        view === 'agent' 
+                          ? 'bg-blue-900 text-white shadow-lg' 
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Agent View
+                    </button>
+                    <button
+                      onClick={() => setView('admin')}
+                      className={`px-8 py-3 rounded-lg font-semibold transition shadow-md ${
+                        view === 'admin' 
+                          ? 'bg-blue-900 text-white shadow-lg' 
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Admin View
+                    </button>
+                    {isAdminAuthenticated && view === 'admin' && (
+                      <button
+                        onClick={handleAdminLogout}
+                        className="px-6 py-3 rounded-lg font-semibold bg-red-600 text-white hover:bg-red-700 transition shadow-md"
+                      >
+                        Logout
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {view === 'agent' && (
+                  <div>
+                    {showBookingForm ? (
+                      <div className="bg-white rounded-xl shadow-xl p-8 mb-6">
+                        <div className="flex justify-between items-center mb-6">
+                          <div>
+                            <h2 className="text-2xl font-bold text-gray-900">
+                              Reserve Your Open House
+                            </h2>
+                            <p className="text-sm text-gray-600 mt-2 font-medium">
+                              {selectedProperty.address} • Week of {formatWeekRange(selectedProperty.weekOf)}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setShowBookingForm(false);
+                              setSelectedProperty(null);
+                              setNewBooking({ agentName: '', phone: '', date: '', startTime: '', endTime: '' });
+                            }}
+                            className="text-gray-400 hover:text-gray-600 transition text-2xl"
+                          >
+                            ✕
+                          </button>
+                        </div>
+
+                        <div className="bg-amber-50 border-l-4 border-amber-500 rounded-lg p-4 mb-6">
+                          <p className="text-sm text-amber-900 font-medium">
+                            ⚠️ Once reserved, this property will be unavailable to other agents for the entire week.
+                          </p>
+                        </div>
+
+                        <div className="space-y-5">
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">
+                              Your Name *
+                            </label>
+                            <input
+                              type="text"
+                              value={newBooking.agentName}
+                              onChange={(e) => setNewBooking({...newBooking, agentName: e.target.value})}
+                              placeholder="John Smith"
+                              className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-blue-900 transition"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">
+                              Phone Number *
+                            </label>
+                            <input
+                              type="tel"
+                              value={newBooking.phone}
+                              onChange={(e) => setNewBooking({...newBooking, phone: e.target.value})}
+                              placeholder="(555) 123-4567"
+                              className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-blue-900 transition"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">
+                              Select Your Date *
+                            </label>
+                            <input
+                              type="date"
+                              value={newBooking.date}
+                              onChange={(e) => setNewBooking({...newBooking, date: e.target.value})}
+                              min={getWeekRange(selectedProperty.weekOf).start.toISOString().split('T')[0]}
+                              max={getWeekRange(selectedProperty.weekOf).end.toISOString().split('T')[0]}
+                              className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-blue-900 transition"
+                            />
+                          </div>
+
+                          <div className="grid md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                Start Time *
+                              </label>
+                              <input
+                                type="time"
+                                value={newBooking.startTime}
+                                onChange={(e) => setNewBooking({...newBooking, startTime: e.target.value})}
+                                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-blue-900 transition"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                End Time *
+                              </label>
+                              <input
+                                type="time"
+                                value={newBooking.endTime}
+                                onChange={(e) => setNewBooking({...newBooking, endTime: e.target.value})}
+                                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-blue-900 transition"
+                              />
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={handleSubmitBooking}
+                            className="w-full bg-blue-900 text-white px-6 py-4 rounded-lg font-bold hover:bg-blue-800 transition shadow-lg hover:shadow-xl text-lg"
+                          >
+                            Confirm Reservation
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <h2 className="text-3xl font-bold text-gray-900 mb-6">Available Open Houses</h2>
+                        {activeProperties.length === 0 ? (
+                          <div className="bg-white rounded-xl shadow-lg p-12 text-center text-gray-500">
+                            <span className="text-5xl">🏠</span>
+                            <p className="text-lg font-medium mt-4">No properties available at this time</p>
+                          </div>
+                        ) : (
+                          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                            {activeProperties.map(prop => {
+                              const booking = getBookingForProperty(prop.id);
+                              const isBooked = !!booking;
+                              
+                              return (
+                                <div key={prop.id} className={`bg-white rounded-xl shadow-lg p-6 hover:shadow-2xl transition-all duration-300 border-2 ${
+                                  isBooked ? 'border-gray-300 opacity-80' : 'border-emerald-200 hover:border-emerald-400'
+                                }`}>
+                                  <div className="flex items-start justify-between mb-4">
+                                    <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                                      <div className={`p-1.5 rounded ${isBooked ? 'bg-gray-400' : 'bg-blue-900'}`}>
+                                        <span className="text-white">🏠</span>
+                                      </div>
+                                      {prop.address}
+                                    </h3>
+                                    <span className={`text-xs font-bold px-3 py-1.5 rounded-full shadow-sm ${
+                                      isBooked 
+                                        ? 'bg-gray-200 text-gray-700 flex items-center gap-1.5' 
+                                        : 'bg-emerald-100 text-emerald-800'
+                                    }`}>
+                                      {isBooked ? '✓ BOOKED' : 'AVAILABLE'}
+                                    </span>
+                                  </div>
+                                  
+                                  <div className="mb-5 text-sm text-gray-600 font-medium">
+                                    <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-lg">
+                                      <span>📅</span>
+                                      <span>Week of {formatWeekRange(prop.weekOf)}</span>
+                                    </div>
+                                  </div>
+
+                                  {isBooked ? (
+                                    <div className="bg-gray-100 rounded-lg p-4 text-sm">
+                                      <div className="font-bold text-gray-900 mb-2 flex items-center gap-2">
+                                        <span>👤</span>
+                                        {booking.agentName}
+                                      </div>
+                                      <div className="text-gray-700 space-y-1">
+                                        <div className="flex items-center gap-2">
+                                          <span>📅</span>
+                                          {new Date(booking.date).toLocaleDateString('en-US', { 
+                                            weekday: 'long', 
+                                            month: 'short', 
+                                            day: 'numeric' 
+                                          })}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <span>🕐</span>
+                                          {booking.startTime} - {booking.endTime}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleStartBooking(prop)}
+                                      className="w-full bg-blue-900 text-white px-4 py-3 rounded-lg font-bold hover:bg-blue-800 transition shadow-md hover:shadow-lg"
+                                    >
+                                      Reserve This Property
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {view === 'admin' && !isAdminAuthenticated && (
+                  <div className="bg-white rounded-xl shadow-xl p-8 max-w-md mx-auto">
+                    <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">Admin Login</h2>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Password
+                        </label>
+                        <input
+                          type="password"
+                          value={adminPassword}
+                          onChange={(e) => setAdminPassword(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && handleAdminLogin()}
+                          placeholder="Enter admin password"
+                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-blue-900 transition"
+                        />
+                      </div>
+                      <button
+                        onClick={handleAdminLogin}
+                        className="w-full bg-blue-900 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-800 transition shadow-md"
+                      >
+                        Login
+                      </button>
+                      <p className="text-xs text-gray-500 text-center mt-4">
+                        Contact your administrator for the password
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {view === 'admin' && isAdminAuthenticated && (
+                  <div className="space-y-6">
+                    <div className="bg-white rounded-xl shadow-xl p-8">
+                      <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                        <span>➕</span>
+                        Add New Property
+                      </h2>
+                      <div className="space-y-5">
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Property Address
+                          </label>
+                          <input
+                            type="text"
+                            value={newProperty.address}
+                            onChange={(e) => setNewProperty({...newProperty, address: e.target.value})}
+                            placeholder="123 Main St"
+                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-blue-900 transition"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Week Of (Select any day in that week)
+                          </label>
+                          <input
+                            type="date"
+                            value={newProperty.weekOf}
+                            onChange={(e) => setNewProperty({...newProperty, weekOf: e.target.value})}
+                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-blue-900 transition"
+                          />
+                          <p className="text-xs text-gray-500 mt-2 font-medium">
+                            The property will be available for one booking during this entire week (Sunday-Saturday)
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleAddProperty}
+                          className="bg-blue-900 text-white px-8 py-3 rounded-lg font-bold hover:bg-blue-800 transition shadow-md hover:shadow-lg"
+                        >
+                          Add Property
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-xl p-8">
+                      <h2 className="text-2xl font-bold text-gray-900 mb-6">All Properties & Reservations</h2>
+                      <div className="space-y-4">
+                        {activeProperties.length === 0 ? (
+                          <p className="text-gray-500 text-center py-8">No properties available</p>
+                        ) : (
+                          activeProperties.map(prop => {
+                            const booking = getBookingForProperty(prop.id);
+                            const isBooked = !!booking;
+                            
+                            return (
+                              <div key={prop.id} className={`border-2 rounded-xl p-6 transition ${isBooked ? 'border-emerald-300 bg-emerald-50' : 'border-gray-200 bg-white'}`}>
+                                <div className="flex justify-between items-start mb-4">
+                                  <div>
+                                    <div className="flex items-center gap-3">
+                                      <h3 className="font-bold text-gray-900 text-lg">{prop.address}</h3>
+                                      {isBooked && (
+                                        <span className="bg-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-full">
+                                          RESERVED
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-sm text-gray-600 mt-1 font-medium">
+                                      Week of {formatWeekRange(prop.weekOf)}
+                                    </p>
+                                  </div>
+                                  <button
+                                    onClick={() => handleDeleteProperty(prop.id)}
+                                    className="text-red-600 hover:text-red-800 p-2 rounded-lg hover:bg-red-50 transition text-xl"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+
+                                {booking ? (
+                                  <div className="mt-4 pl-4 border-l-4 border-emerald-500">
+                                    <div className="bg-white p-4 rounded-lg shadow-sm">
+                                      <div className="text-sm space-y-2">
+                                        <div className="font-bold text-gray-900 flex items-center gap-2 text-base">
+                                          <span>👤</span>
+                                          {booking.agentName}
+                                        </div>
+                                        <div className="text-gray-700 flex items-center gap-2">
+                                          <span>📞</span>
+                                          {booking.phone}
+                                        </div>
+                                        <div className="text-gray-700 flex items-center gap-2">
+                                          <span>📅</span>
+                                          {new Date(booking.date).toLocaleDateString('en-US', { 
+                                            weekday: 'long', 
+                                            month: 'short', 
+                                            day: 'numeric',
+                                            year: 'numeric'
+                                          })}
+                                        </div>
+                                        <div className="text-gray-700 flex items-center gap-2">
+                                          <span>🕐</span>
+                                          {booking.startTime} - {booking.endTime}
+                                        </div>
+                                      </div>
+                                      <button
+                                        onClick={() => handleCancelBooking(booking.id)}
+                                        className="mt-4 text-red-600 hover:text-red-800 text-sm font-semibold px-4 py-2 rounded-lg hover:bg-red-50 transition"
+                                      >
+                                        Cancel Reservation
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="text-sm text-gray-500 italic pl-4 mt-3 font-medium">Available for booking</p>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<OpenHouseScheduler />);
+    </script>
+</body>
+</html>
