@@ -60,6 +60,30 @@
             setLoading(false);
           };
 
+          const formatDate = (dateStr) => {
+            if (!dateStr) return '';
+            let date;
+            if (dateStr.includes('T')) {
+              date = new Date(dateStr);
+            } else {
+              date = new Date(dateStr + 'T12:00:00');
+            }
+            return date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+          };
+
+          const formatTime = (timeStr) => {
+            if (!timeStr) return '';
+            let date;
+            if (timeStr.includes('T')) {
+              date = new Date(timeStr);
+            } else {
+              const [hours, minutes] = timeStr.split(':');
+              date = new Date();
+              date.setHours(parseInt(hours), parseInt(minutes));
+            }
+            return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+          };
+
           const getWeekRange = (weekOfDate) => {
             // Handle both string formats from API
             let dateStr = weekOfDate;
@@ -379,8 +403,8 @@
                                   {isBooked ? (
                                     <div className="bg-gray-100 rounded-lg p-4 text-sm">
                                       <p className="font-bold mb-1">{booking.agentName}</p>
-                                      <p>{new Date(booking.date).toLocaleDateString()}</p>
-                                      <p>{booking.startTime} - {booking.endTime}</p>
+                                      <p>{formatDate(booking.date)}</p>
+                                      <p>{formatTime(booking.startTime)} - {formatTime(booking.endTime)}</p>
                                     </div>
                                   ) : (
                                     <button onClick={() => handleStartBooking(prop)} className="w-full bg-blue-900 text-white py-3 rounded-lg font-bold">
@@ -462,8 +486,8 @@
                                   <div className="mt-4 bg-gray-50 p-4 rounded-lg">
                                     <p className="font-bold">{booking.agentName}</p>
                                     <p className="text-sm">{booking.phone}</p>
-                                    <p className="text-sm">{new Date(booking.date).toLocaleDateString()}</p>
-                                    <p className="text-sm">{booking.startTime} - {booking.endTime}</p>
+                                    <p className="text-sm">{formatDate(booking.date)}</p>
+                                    <p className="text-sm">{formatTime(booking.startTime)} - {formatTime(booking.endTime)}</p>
                                     <button onClick={() => handleCancelBooking(booking.propertyAddress, booking.weekOf)} className="mt-2 text-red-600 text-sm font-semibold">
                                       Cancel Booking
                                     </button>
