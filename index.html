@@ -61,7 +61,12 @@
           };
 
           const getWeekRange = (weekOfDate) => {
-            const date = new Date(weekOfDate + 'T00:00:00');
+            // Handle both string formats from API
+            let dateStr = weekOfDate;
+            if (dateStr.includes('T')) {
+              dateStr = dateStr.split('T')[0];
+            }
+            const date = new Date(dateStr + 'T12:00:00');
             const day = date.getDay();
             const diff = day === 0 ? -6 : 1 - day;
             const monday = new Date(date);
