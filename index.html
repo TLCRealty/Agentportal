@@ -14,7 +14,7 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
         
-       const API_URL = 'https://script.google.com/macros/s/AKfycbwBItx73Yr8msIWBc1ElyQrJFY35ZPl95MLUNkPer5qCRZQen2_23sI13-ymXJwXpJc/exec';
+        const API_URL = 'https://script.google.com/macros/s/AKfycbyBKjHyN0GT6k4bNKzW2zk8Q1aSSyrkW_GOjDlE4IINSP4xnk2Z_GGxxAd2jPBC5WI/exec';
 
         function OpenHouseScheduler() {
           const [view, setView] = useState('agent');
@@ -63,11 +63,16 @@
           const getWeekRange = (weekOfDate) => {
             const date = new Date(weekOfDate);
             const day = date.getDay();
-            const diff = date.getDate() - day;
-            const sunday = new Date(date.setDate(diff));
-            const saturday = new Date(sunday);
-            saturday.setDate(saturday.getDate() + 6);
-            return { start: sunday, end: saturday };
+            const diff = day === 0 ? -6 : 1 - day;
+            const monday = new Date(date);
+            monday.setDate(date.getDate() + diff);
+            monday.setHours(0, 0, 0, 0);
+            
+            const sunday = new Date(monday);
+            sunday.setDate(monday.getDate() + 6);
+            sunday.setHours(23, 59, 59, 999);
+            
+            return { start: monday, end: sunday };
           };
 
           const getActiveProperties = () => {
@@ -80,12 +85,12 @@
             }).sort((a, b) => new Date(a.weekOf) - new Date(b.weekOf));
           };
 
-          const isPropertyBooked = (propertyId) => {
-            return bookings.some(b => b.propertyId == propertyId);
+          const isPropertyBooked = (address, weekOf) => {
+            return bookings.some(b => b.propertyAddress === address && b.weekOf === weekOf);
           };
 
-          const getBookingForProperty = (propertyId) => {
-            return bookings.find(b => b.propertyId == propertyId);
+          const getBookingForProperty = (address, weekOf) => {
+            return bookings.find(b => b.propertyAddress === address && b.weekOf === weekOf);
           };
 
           const formatWeekRange = (weekOfDate) => {
@@ -116,9 +121,13 @@
               return;
             }
 
-            const newId = Date.now();
+            const date = new Date(newProperty.weekOf);
+            if (date.getDay() !== 1) {
+              alert('Please select a Monday for the "Week Of" date');
+              return;
+            }
+
             const propertyData = {
-              id: newId,
               address: newProperty.address,
               weekOf: newProperty.weekOf
             };
@@ -139,13 +148,13 @@
             }
           };
 
-          const handleDeleteProperty = async (id) => {
+          const handleDeleteProperty = async (address, weekOf) => {
             if (!confirm('Delete this property? All bookings will be removed.')) return;
 
             try {
               await fetch(API_URL, {
                 method: 'POST',
-                body: JSON.stringify({ action: 'deleteProperty', id: id })
+                body: JSON.stringify({ action: 'deleteProperty', address: address, weekOf: weekOf })
               });
               
               await loadData();
@@ -176,8 +185,6 @@
             }
 
             const bookingData = {
-              id: Date.now(),
-              propertyId: selectedProperty.id,
               propertyAddress: selectedProperty.address,
               weekOf: selectedProperty.weekOf,
               agentName: newBooking.agentName,
@@ -204,13 +211,13 @@
             }
           };
 
-          const handleCancelBooking = async (bookingId) => {
+          const handleCancelBooking = async (address, weekOf) => {
             if (!confirm('Cancel this booking? This will make the property available again.')) return;
 
             try {
               await fetch(API_URL, {
                 method: 'POST',
-                body: JSON.stringify({ action: 'deleteBooking', id: bookingId })
+                body: JSON.stringify({ action: 'deleteBooking', propertyAddress: address, weekOf: weekOf })
               });
               
               await loadData();
@@ -332,7 +339,7 @@
 
                         <div className="bg-amber-50 border-l-4 border-amber-500 rounded-lg p-4 mb-6">
                           <p className="text-sm text-amber-900 font-medium">
-                            ⚠️ Once reserved, this property will be unavailable to other agents for the entire week.
+                            ⚠️ Once reserved, this property will be unavailable to other agents for the entire week (Monday-Sunday).
                           </p>
                         </div>
 
@@ -420,28 +427,31 @@
                           </div>
                         ) : (
                           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                            {activeProperties.map(prop => {
-                              const booking = getBookingForProperty(prop.id);
+                            {activeProperties.map((prop, idx) => {
+                              const booking = getBookingForProperty(prop.address, prop.weekOf);
                               const isBooked = !!booking;
                               
                               return (
-                                <div key={prop.id} className={`bg-white rounded-xl shadow-lg p-6 hover:shadow-2xl transition-all duration-300 border-2 ${
+                                <div key={idx} className={`bg-white rounded-xl shadow-lg p-6 hover:shadow-2xl transition-all duration-300 border-2 relative ${
                                   isBooked ? 'border-gray-300 opacity-80' : 'border-emerald-200 hover:border-emerald-400'
                                 }`}>
-                                  <div className="flex items-start justify-between mb-4">
+                                  <div className="absolute top-4 right-4">
+                                    <span className={`text-xs font-bold px-4 py-2 rounded-lg shadow-md ${
+                                      isBooked 
+                                        ? 'bg-red-500 text-white' 
+                                        : 'bg-green-500 text-white'
+                                    }`}>
+                                      {isBooked ? 'BOOKED' : 'AVAILABLE'}
+                                    </span>
+                                  </div>
+
+                                  <div className="mb-4 mt-8">
                                     <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                                       <div className={`p-1.5 rounded ${isBooked ? 'bg-gray-400' : 'bg-blue-900'}`}>
                                         <span className="text-white">🏠</span>
                                       </div>
                                       {prop.address}
                                     </h3>
-                                    <span className={`text-xs font-bold px-3 py-1.5 rounded-full shadow-sm ${
-                                      isBooked 
-                                        ? 'bg-gray-200 text-gray-700 flex items-center gap-1.5' 
-                                        : 'bg-emerald-100 text-emerald-800'
-                                    }`}>
-                                      {isBooked ? '✓ BOOKED' : 'AVAILABLE'}
-                                    </span>
                                   </div>
                                   
                                   <div className="mb-5 text-sm text-gray-600 font-medium">
@@ -542,7 +552,7 @@
                         </div>
                         <div>
                           <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            Week Of (Select any day in that week)
+                            Week Of (Select Monday)
                           </label>
                           <input
                             type="date"
@@ -551,7 +561,7 @@
                             className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-blue-900 transition"
                           />
                           <p className="text-xs text-gray-500 mt-2 font-medium">
-                            The property will be available for one booking during this entire week (Sunday-Saturday)
+                            Select a Monday. The property will be available Monday-Sunday of that week.
                           </p>
                         </div>
                         <button
@@ -569,12 +579,12 @@
                         {activeProperties.length === 0 ? (
                           <p className="text-gray-500 text-center py-8">No properties available</p>
                         ) : (
-                          activeProperties.map(prop => {
-                            const booking = getBookingForProperty(prop.id);
+                          activeProperties.map((prop, idx) => {
+                            const booking = getBookingForProperty(prop.address, prop.weekOf);
                             const isBooked = !!booking;
                             
                             return (
-                              <div key={prop.id} className={`border-2 rounded-xl p-6 transition ${isBooked ? 'border-emerald-300 bg-emerald-50' : 'border-gray-200 bg-white'}`}>
+                              <div key={idx} className={`border-2 rounded-xl p-6 transition ${isBooked ? 'border-emerald-300 bg-emerald-50' : 'border-gray-200 bg-white'}`}>
                                 <div className="flex justify-between items-start mb-4">
                                   <div>
                                     <div className="flex items-center gap-3">
@@ -586,11 +596,11 @@
                                       )}
                                     </div>
                                     <p className="text-sm text-gray-600 mt-1 font-medium">
-                                      Week of {formatWeekRange(prop.weekOf)}
+                                      Week of {formatWeekRange(prop.weekOf)} (Mon-Sun)
                                     </p>
                                   </div>
                                   <button
-                                    onClick={() => handleDeleteProperty(prop.id)}
+                                    onClick={() => handleDeleteProperty(prop.address, prop.weekOf)}
                                     className="text-red-600 hover:text-red-800 p-2 rounded-lg hover:bg-red-50 transition text-xl"
                                   >
                                     ✕
@@ -624,7 +634,7 @@
                                         </div>
                                       </div>
                                       <button
-                                        onClick={() => handleCancelBooking(booking.id)}
+                                        onClick={() => handleCancelBooking(booking.propertyAddress, booking.weekOf)}
                                         className="mt-4 text-red-600 hover:text-red-800 text-sm font-semibold px-4 py-2 rounded-lg hover:bg-red-50 transition"
                                       >
                                         Cancel Reservation
@@ -632,28 +642,4 @@
                                     </div>
                                   </div>
                                 ) : (
-                                  <p className="text-sm text-gray-500 italic pl-4 mt-3 font-medium">Available for booking</p>
-                                )}
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        }
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<OpenHouseScheduler />);
-    </script>
-</body>
-
-</html>
-
-
-
-
+                                  <p className="text-
