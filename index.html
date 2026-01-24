@@ -61,7 +61,7 @@
           };
 
           const getWeekRange = (weekOfDate) => {
-            const date = new Date(weekOfDate);
+            const date = new Date(weekOfDate + 'T00:00:00');
             const day = date.getDay();
             const diff = day === 0 ? -6 : 1 - day;
             const monday = new Date(date);
@@ -117,7 +117,7 @@
               return;
             }
 
-            const date = new Date(newProperty.weekOf);
+            const date = new Date(newProperty.weekOf + 'T00:00:00');
             if (date.getDay() !== 1) {
               alert('Please select a Monday for the "Week Of" date');
               return;
